@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin - Pedacito de Gracia</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-100 p-6">
+  <div class="max-w-4xl mx-auto space-y-8">
+    
+    <!-- Formulario para agregar producto -->
+    <div class="bg-white p-6 rounded-xl shadow-md">
+      <h2 class="text-xl font-bold mb-4 text-amber-900">Agregar Nuevo Producto</h2>
+      <form id="form-producto" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium">Nombre de la Galleta</label>
+          <input type="text" id="nombre" class="w-full border p-2 rounded-lg" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Descripción</label>
+          <textarea id="descripcion" class="w-full border p-2 rounded-lg"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Precio ($ USD)</label>
+          <input type="number" step="0.01" id="precio" value="2.00" class="w-full border p-2 rounded-lg" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Imagen del Producto</label>
+          <input type="file" id="imagen" accept="image/*" class="w-full border p-2 rounded-lg" required>
+        </div>
+        <button type="submit" class="bg-amber-800 text-white font-bold py-2 px-6 rounded-lg">Guardar Producto</button>
+      </form>
+    </div>
+
+    <!-- Lista de Pedidos -->
+    <div class="bg-white p-6 rounded-xl shadow-md">
+      <h2 class="text-xl font-bold mb-4 text-amber-900">Pedidos Recibidos</h2>
+      <div id="lista-pedidos" class="space-y-4">
+        <p class="text-gray-500">Cargando pedidos...</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://qolbpidhqghublpczfbr.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvbGJwaWRocWdodWJscGN6ZmJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwMTc3NzgsImV4cCI6MjEwNTU5Mzc3OH0.y3u_bUxn2veGSafUrlA3IYiAv00hMj0FOr_aqPnP2XE';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Guardar Producto + Imagen
+    document.getElementById('form-producto').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const file = document.getElementById('imagen').files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // 1. Subir imagen a Supabase Storage
+      const { error: uploadError } = await supabaseClient.storage
+        .from('galletas-images')
+        .upload(filePath, file);
+
+      if (uploadError) return alert('Error subiendo imagen: ' + uploadError.message);
+
+      // 2. Obtener URL pública
+      const { data: publicUrlData } = supabaseClient.storage
+        .from('galletas-images')
+        .getPublicUrl(filePath);
+
+      // 3. Crear registro en BD
+      const { error: dbError } = await supabaseClient.from('productos').insert([{
+        nombre: document.getElementById('nombre').value,
+        descripcion: document.getElementById('descripcion').value,
+        precio: parseFloat(document.getElementById('precio').value),
+        imagen_url: publicUrlData.publicUrl
+      }]);
+
+      if (!dbError) {
+        alert('¡Producto agregado con éxito!');
+        document.getElementById('form-producto').reset();
+      }
+    });
+
+    // Cargar Pedidos
+    async function cargarPedidos() {
+      const { data: pedidos, error } = await supabaseClient
+        .from('pedidos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      const contenedor = document.getElementById('lista-pedidos');
+      contenedor.innerHTML = '';
+
+      pedidos.forEach(p => {
+        contenedor.innerHTML += `
+          <div class="border p-4 rounded-lg bg-gray-50 flex justify-between items-start">
+            <div>
+              <p class="font-bold text-amber-900">${p.cliente_nombre} - <span class="text-sm font-normal text-gray-500">${new Date(p.created_at).toLocaleString()}</span></p>
+              <pre class="text-sm font-sans my-2 whitespace-pre-wrap text-gray-700">${p.resumen_pedido}</pre>
+              <p class="font-bold">Total: $${p.total.toFixed(2)} USD</p>
+            </div>
+            <span class="px-3 py-1 text-xs font-bold rounded-full ${p.estado === 'pendiente' ? 'bg-amber-200 text-amber-900' : 'bg-green-200 text-green-900'}">
+              ${p.estado}
+            </span>
+          </div>
+        `;
+      });
+    }
+
+    cargarPedidos();
+  </script>
+</body>
+</html>
